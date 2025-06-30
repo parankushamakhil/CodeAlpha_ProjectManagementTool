@@ -1,3 +1,6 @@
+install mongodb and nodejs on the local commputer
+
+
 to run this project first install dependencies with command
 npm install
 
