@@ -58,13 +58,16 @@ const Sidebar: React.FC = () => {
             <span>{item.label}</span>
           </Link>
         ))}
+      </nav>
 
-        {/* Quick Actions */}
-        <div className="pt-6">
+      {/* Actions & Recent Projects */}
+      <div className="p-4 space-y-6">
+        <div>
           <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
             Quick Actions
           </p>
           <Link
+            key="new-project-link"
             to="/projects/new"
             className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
           >
@@ -72,9 +75,7 @@ const Sidebar: React.FC = () => {
             <span>New Project</span>
           </Link>
         </div>
-
-        {/* Recent Projects */}
-        <div className="pt-6">
+        <div>
           <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
             Recent Projects
           </p>
@@ -94,7 +95,7 @@ const Sidebar: React.FC = () => {
             ))}
           </div>
         </div>
-      </nav>
+      </div>
 
       {/* User Profile */}
       <div className="p-4 border-t border-gray-200">

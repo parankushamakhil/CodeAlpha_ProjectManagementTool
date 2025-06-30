@@ -1,8 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 
+// Helper to set the auth token for API calls
+const setAuthToken = (token: string | null) => {
+  // In a real app, you would set the token in a global header for a library like axios
+  // For simplicity here, we'll rely on passing it where needed or storing it for fetch.
+};
+
 interface AuthContextType {
   user: User | null;
+  token: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -21,66 +28,75 @@ export const useAuth = () => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored user data
+    // Load user from token
+    const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
+    if (storedToken && storedUser) {
+      setToken(storedToken);
       setUser(JSON.parse(storedUser));
+      setAuthToken(storedToken);
     }
     setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
     setLoading(true);
-    try {
-      // Simulate API call - in real app, this would call your backend
-      const mockUser: User = {
-        id: '1',
-        name: 'John Doe',
-        email,
-        role: 'admin',
-        createdAt: new Date().toISOString()
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-    } catch (error) {
-      throw new Error('Invalid credentials');
-    } finally {
-      setLoading(false);
+    const response = await fetch('http://localhost:3001/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setUser(data.user);
+      setToken(data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('token', data.token);
+      setAuthToken(data.token);
+    } else {
+      throw new Error(data.msg || 'Login failed');
     }
+    setLoading(false);
   };
 
   const register = async (name: string, email: string, password: string) => {
     setLoading(true);
-    try {
-      // Simulate API call
-      const mockUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        name,
-        email,
-        role: 'member',
-        createdAt: new Date().toISOString()
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-    } catch (error) {
-      throw new Error('Registration failed');
-    } finally {
-      setLoading(false);
+    const response = await fetch('http://localhost:3001/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setUser(data.user);
+      setToken(data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('token', data.token);
+      setAuthToken(data.token);
+    } else {
+      throw new Error(data.msg || 'Registration failed');
     }
+    setLoading(false);
   };
 
   const logout = () => {
     setUser(null);
+    setToken(null);
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    setAuthToken(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, register, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

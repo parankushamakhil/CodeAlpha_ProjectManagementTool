@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   TrendingUp, 
@@ -8,15 +8,18 @@ import {
   AlertTriangle,
   Calendar,
   DollarSign,
-  Activity
+  Activity,
+  Plus
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
+import CreateProjectModal from '../components/Projects/CreateProjectModal';
 
 const Dashboard: React.FC = () => {
   const { projects, tasks } = useApp();
   const { user } = useAuth();
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const stats = {
     totalProjects: projects.length,
@@ -39,6 +42,37 @@ const Dashboard: React.FC = () => {
     .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime())
     .slice(0, 5);
 
+  const statCards = [
+    {
+      title: 'Active Projects',
+      value: stats.activeProjects,
+      subtext: `${stats.totalProjects} total projects`,
+      icon: TrendingUp,
+      color: 'blue'
+    },
+    {
+      title: 'Completed Tasks',
+      value: stats.completedTasks,
+      subtext: `${stats.totalTasks} total tasks`,
+      icon: CheckCircle,
+      color: 'green'
+    },
+    {
+      title: 'Overdue Tasks',
+      value: stats.overdueTasks,
+      subtext: 'Needs attention',
+      icon: AlertTriangle,
+      color: 'red'
+    },
+    {
+      title: 'Budget Spent',
+      value: `$${(stats.spentBudget / 1000).toFixed(0)}k`,
+      subtext: `$${(stats.totalBudget / 1000).toFixed(0)}k total budget`,
+      icon: DollarSign,
+      color: 'purple'
+    }
+  ];
+
   return (
     <div className="space-y-8">
       {/* Welcome Section */}
@@ -53,81 +87,26 @@ const Dashboard: React.FC = () => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl p-6 border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active Projects</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {stats.activeProjects}
-              </p>
+        {statCards.map((card) => (
+          <div key={card.title} className="bg-white rounded-xl p-6 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">{card.title}</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {card.value}
+                </p>
+              </div>
+              <div className={`w-12 h-12 bg-${card.color}-100 rounded-lg flex items-center justify-center`}>
+                <card.icon className={`w-6 h-6 text-${card.color}-600`} />
+              </div>
             </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <span className="text-sm text-gray-500">
-              {stats.totalProjects} total projects
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-6 border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Completed Tasks</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {stats.completedTasks}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <CheckCircle className="w-6 h-6 text-green-600" />
+            <div className="mt-4">
+              <span className={`text-sm text-${card.color === 'red' ? 'red-600' : 'gray-500'}`}>
+                {card.subtext}
+              </span>
             </div>
           </div>
-          <div className="mt-4">
-            <span className="text-sm text-gray-500">
-              {stats.totalTasks} total tasks
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-6 border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Overdue Tasks</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {stats.overdueTasks}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6 text-red-600" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <span className="text-sm text-red-600">
-              Needs attention
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-6 border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Budget Spent</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                ${(stats.spentBudget / 1000).toFixed(0)}k
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <DollarSign className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <span className="text-sm text-gray-500">
-              ${(stats.totalBudget / 1000).toFixed(0)}k total budget
-            </span>
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* Main Content Grid */}
@@ -219,12 +198,21 @@ const Dashboard: React.FC = () => {
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">Active Projects</h2>
-            <Link
-              to="/projects"
-              className="text-sm font-medium text-blue-600 hover:text-blue-500"
-            >
-              View all →
-            </Link>
+            <div className="flex items-center space-x-4">
+              <Link
+                to="/projects"
+                className="text-sm font-medium text-blue-600 hover:text-blue-500"
+              >
+                View all →
+              </Link>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center space-x-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Project</span>
+              </button>
+            </div>
           </div>
         </div>
         <div className="p-6">
@@ -270,6 +258,10 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+      <CreateProjectModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
     </div>
   );
 };

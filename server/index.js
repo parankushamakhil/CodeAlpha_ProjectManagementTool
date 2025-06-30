@@ -2,6 +2,20 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import connectDB from './config/db.js';
+
+// Import Models
+import User from './models/User.js';
+import Project from './models/Project.js';
+import Task from './models/Task.js';
+import Comment from './models/Comment.js';
+import Notification from './models/Notification.js';
+
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
+// Connect to Database
+connectDB();
 
 const app = express();
 const server = createServer(app);
@@ -15,39 +29,6 @@ const io = new Server(server, {
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-// Mock data store
-let users = [
-  { id: '1', name: 'John Doe', email: 'john@example.com', role: 'admin' },
-  { id: '2', name: 'Sarah Wilson', email: 'sarah@example.com', role: 'member' },
-  { id: '3', name: 'Mike Johnson', email: 'mike@example.com', role: 'member' }
-];
-
-let projects = [
-  {
-    id: 'proj-1',
-    name: 'Website Redesign',
-    description: 'Complete overhaul of company website',
-    status: 'active',
-    progress: 65,
-    members: ['1', '2', '3'],
-    createdBy: '1'
-  }
-];
-
-let tasks = [
-  {
-    id: 'task-1',
-    title: 'Design Homepage Layout',
-    description: 'Create wireframes and mockups',
-    status: 'completed',
-    priority: 'high',
-    assigneeId: '2',
-    projectId: 'proj-1'
-  }
-];
-
-let notifications = [];
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
@@ -82,140 +63,213 @@ io.on('connection', (socket) => {
 // API Routes
 
 // Authentication
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  
-  // Mock authentication - in real app, verify credentials
-  const user = users.find(u => u.email === email);
-  if (user) {
-    res.json({ user, token: 'mock-jwt-token' });
-  } else {
-    res.status(401).json({ error: 'Invalid credentials' });
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password } = req.body;
+
+  try {
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ msg: 'User already exists' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    user = new User({
+      name,
+      email,
+      password: hashedPassword,
+    });
+
+    await user.save();
+
+    const payload = { user: { id: user.id } };
+    jwt.sign(payload, 'your_jwt_secret', { expiresIn: 360000 }, (err, token) => {
+      if (err) throw err;
+      res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
 });
 
-app.post('/api/auth/register', (req, res) => {
-  const { name, email, password } = req.body;
-  
-  const newUser = {
-    id: Date.now().toString(),
-    name,
-    email,
-    role: 'member'
-  };
-  
-  users.push(newUser);
-  res.json({ user: newUser, token: 'mock-jwt-token' });
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    let user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ msg: 'Invalid credentials' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: 'Invalid credentials' });
+    }
+
+    const payload = { user: { id: user.id } };
+    jwt.sign(payload, 'your_jwt_secret', { expiresIn: 360000 }, (err, token) => {
+      if (err) throw err;
+      res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
 });
 
 // Projects
-app.get('/api/projects', (req, res) => {
-  res.json(projects);
+app.get('/api/projects', async (req, res) => {
+  try {
+    const projects = await Project.find().populate('members', 'name avatar');
+    res.json(projects);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
 });
 
-app.post('/api/projects', (req, res) => {
-  const newProject = {
-    id: Date.now().toString(),
-    ...req.body,
-    createdAt: new Date().toISOString()
-  };
-  
-  projects.push(newProject);
-  
-  // Notify all project members
-  io.emit('project-created', newProject);
-  
-  res.json(newProject);
+app.post('/api/projects', async (req, res) => {
+  const { name, description, members, createdBy } = req.body;
+  try {
+    const newProject = new Project({
+      name,
+      description,
+      members,
+      createdBy
+    });
+
+    const project = await newProject.save();
+    io.emit('project-created', project);
+    res.json(project);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
 });
 
-app.put('/api/projects/:id', (req, res) => {
-  const projectIndex = projects.findIndex(p => p.id === req.params.id);
-  if (projectIndex !== -1) {
-    projects[projectIndex] = { ...projects[projectIndex], ...req.body };
+app.put('/api/projects/:id', async (req, res) => {
+  try {
+    let project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ msg: 'Project not found' });
+
+    project = await Project.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
     
-    // Notify project members
-    io.to(`project-${req.params.id}`).emit('project-updated', projects[projectIndex]);
-    
-    res.json(projects[projectIndex]);
-  } else {
-    res.status(404).json({ error: 'Project not found' });
+    io.to(`project-${req.params.id}`).emit('project-updated', project);
+    res.json(project);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
 });
 
 // Tasks
-app.get('/api/tasks', (req, res) => {
+app.get('/api/tasks', async (req, res) => {
   const { projectId } = req.query;
-  let filteredTasks = tasks;
-  
-  if (projectId) {
-    filteredTasks = tasks.filter(t => t.projectId === projectId);
+  try {
+    const filter = projectId ? { projectId } : {};
+    const tasks = await Task.find(filter).populate('assigneeId', 'name avatar');
+    res.json(tasks);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
-  
-  res.json(filteredTasks);
 });
 
-app.post('/api/tasks', (req, res) => {
-  const newTask = {
-    id: Date.now().toString(),
-    ...req.body,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  
-  tasks.push(newTask);
-  
-  // Notify project members and assignee
-  io.to(`project-${newTask.projectId}`).emit('task-created', newTask);
-  
-  if (newTask.assigneeId) {
-    const notification = {
-      id: Date.now().toString(),
-      type: 'task_assigned',
-      title: 'New Task Assigned',
-      message: `You've been assigned to "${newTask.title}"`,
-      userId: newTask.assigneeId,
-      read: false,
-      createdAt: new Date().toISOString()
-    };
+app.post('/api/tasks', async (req, res) => {
+  try {
+    const newTask = new Task(req.body);
+    const task = await newTask.save();
     
-    notifications.push(notification);
-    io.to(`user-${newTask.assigneeId}`).emit('notification', notification);
+    io.to(`project-${task.projectId}`).emit('task-created', task);
+    
+    // Create notification
+    if (task.assigneeId) {
+      const notification = new Notification({
+        type: 'task_assigned',
+        title: 'New Task Assigned',
+        message: `You've been assigned to "${task.title}"`,
+        userId: task.assigneeId,
+      });
+      await notification.save();
+      io.to(`user-${task.assigneeId}`).emit('notification', notification);
+    }
+    
+    res.json(task);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
-  
-  res.json(newTask);
 });
 
-app.put('/api/tasks/:id', (req, res) => {
-  const taskIndex = tasks.findIndex(t => t.id === req.params.id);
-  if (taskIndex !== -1) {
-    tasks[taskIndex] = { 
-      ...tasks[taskIndex], 
-      ...req.body, 
-      updatedAt: new Date().toISOString() 
-    };
+app.put('/api/tasks/:id', async (req, res) => {
+  try {
+    let task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ msg: 'Task not found' });
+
+    task = await Task.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
     
-    // Notify project members
-    io.to(`project-${tasks[taskIndex].projectId}`).emit('task-updated', tasks[taskIndex]);
+    io.to(`project-${task.projectId}`).emit('task-updated', task);
+    res.json(task);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// Comments
+app.get('/api/tasks/:taskId/comments', async (req, res) => {
+  try {
+    const comments = await Comment.find({ taskId: req.params.taskId }).populate('userId', 'name avatar');
+    res.json(comments);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+app.post('/api/tasks/:taskId/comments', async (req, res) => {
+  const { content, userId, projectId } = req.body;
+  try {
+    const newComment = new Comment({
+      content,
+      userId,
+      taskId: req.params.taskId
+    });
+
+    const comment = await newComment.save();
     
-    res.json(tasks[taskIndex]);
-  } else {
-    res.status(404).json({ error: 'Task not found' });
+    io.to(`project-${projectId}`).emit('comment-added', comment);
+    res.status(201).json(comment);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
 });
 
 // Notifications
-app.get('/api/notifications/:userId', (req, res) => {
-  const userNotifications = notifications.filter(n => n.userId === req.params.userId);
-  res.json(userNotifications);
+app.get('/api/notifications/:userId', async (req, res) => {
+  try {
+    const notifications = await Notification.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+    res.json(notifications);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
 });
 
-app.put('/api/notifications/:id/read', (req, res) => {
-  const notificationIndex = notifications.findIndex(n => n.id === req.params.id);
-  if (notificationIndex !== -1) {
-    notifications[notificationIndex].read = true;
-    res.json(notifications[notificationIndex]);
-  } else {
-    res.status(404).json({ error: 'Notification not found' });
+app.put('/api/notifications/:id/read', async (req, res) => {
+  try {
+    let notification = await Notification.findById(req.params.id);
+    if (!notification) return res.status(404).json({ msg: 'Notification not found' });
+
+    notification.read = true;
+    await notification.save();
+    res.json(notification);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
 });
 
@@ -234,6 +288,17 @@ app.post('/api/upload', (req, res) => {
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Users
+app.get('/api/users', async (req, res) => {
+  try {
+    const users = await User.find().select('-password');
+    res.json(users);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
 });
 
 const PORT = process.env.PORT || 3001;
